@@ -9,6 +9,7 @@ An interactive, comic-book explainer that teaches newcomers how to tell whether 
 [![Blazor Server](https://img.shields.io/badge/Blazor-Interactive%20Server-512BD4?style=for-the-badge&logo=blazor&logoColor=white)](https://learn.microsoft.com/aspnet/core/blazor/)
 [![C#](https://img.shields.io/badge/C%23-Razor-239120?style=for-the-badge)](https://learn.microsoft.com/dotnet/csharp/)
 <br>
+[![Plain CSS (no framework)](https://img.shields.io/badge/CSS-no%20framework-E4002B?style=for-the-badge&logo=css&logoColor=white)](src/ClickbaitDecoder/wwwroot/decoder.css)
 [![Web Audio](https://img.shields.io/badge/Sound-Web%20Audio%20API-FFE600?style=for-the-badge&logo=javascript&logoColor=black)](src/ClickbaitDecoder/wwwroot/sfx.js)
 [![NuGet packages: 0](https://img.shields.io/badge/NuGet%20packages-0-00B7EB?style=for-the-badge)](src/ClickbaitDecoder/ClickbaitDecoder.csproj)
 <br>
@@ -45,7 +46,7 @@ An interactive, comic-book explainer that teaches newcomers how to tell whether 
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **.NET 10** · **ASP.NET Core Blazor Web App** (Interactive Server, `.slnx` solution) | Everything is C# components over one SignalR circuit, with no separate front-end build                                                                              |
 | **C# / Razor components**                                                            | The case study is plain data (`Layer` → `Block` → `Segment` + `Flag`); one `LayerView` component renders both the story and scanned articles                        |
-| **Hand-written CSS**                                                                 | Halftone dots, comic bursts (`clip-path`), stamp, shake and confetti keyframes, and a self-drawing SVG chart (`pathLength` + `stroke-dashoffset`). No CSS framework |
+| **Plain CSS (no framework)**                                                         | Halftone dots, comic bursts (`clip-path`), stamp, shake and confetti keyframes, and a self-drawing SVG chart (`pathLength` + `stroke-dashoffset`). No CSS framework |
 | **Web Audio API**                                                                    | Every pow, boing, stamp, whoosh and ta-da is synthesized in the browser. No audio files                                                                             |
 | **Google Fonts**: _Bangers_ + _Comic Neue_                                           | Falls back to Impact and Comic Sans when offline                                                                                                                    |
 | **`HttpClient` + source-generated `Regex`**                                          | Fetches a public article and extracts the headline and paragraphs. No HTML-parser dependency                                                                        |
