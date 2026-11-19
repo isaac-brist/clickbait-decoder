@@ -1,0 +1,23 @@
+@using ClickbaitDecoder.Services
+@inject Sfx Sfx
+
+<button class="sound-toggle" @onclick="Toggle" title="@(muted ? "Sound is off" : "Sound is on")" aria-label="Toggle sound">
+    @(muted ? "🔇" : "🔊")
+</button>
+
+@code {
+    bool muted;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        muted = await Sfx.IsMuted();
+        StateHasChanged();
+    }
+
+    async Task Toggle()
+    {
+        muted = await Sfx.Toggle();
+        if (!muted) await Sfx.Play("pow"); // audible confirmation that sound is back on
+    }
+}

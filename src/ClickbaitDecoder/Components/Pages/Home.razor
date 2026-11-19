@@ -1,0 +1,184 @@
+﻿@page "/"
+@using ClickbaitDecoder.Story
+@using ClickbaitDecoder.Services
+@inject Sfx Sfx
+
+<PageTitle>Clickbait Decoder</PageTitle>
+
+<div class="app stage-@Current">
+    <header class="masthead">
+        <div class="logo">CLICKBAIT <span>DECODER</span></div>
+        <ol class="chain">
+            @for (var i = 0; i <= Layers.Count; i++)
+            {
+                var label = i < Layers.Count ? Layers[i].Kicker : "Verdict";
+                <li class="@(i == Current ? "here" : i < Current ? "done" : "")">@label</li>
+            }
+        </ol>
+        <a class="navlink" href="scan">Try your own article ▶</a>
+        <SoundToggle />
+    </header>
+
+    @if (Current == 0)
+    {
+        <div class="intro caption">
+            Every headline is the <b>last link in a game of telephone</b>. The actual study is
+            <b>@(Layers.Count - 1) layers down</b>. Click anything that looks fishy, rate how much you trust it,
+            then <b>DIG DEEPER</b>.
+        </div>
+    }
+
+    @if (!IsVerdict)
+    {
+        <LayerView Layer="Layers[Current]" Style="Current" Found="found" Revealed="revealed"
+                   @bind-Trust="trust[Current]" OnNext="Next"
+                   NextLabel="@(Current == Layers.Count - 1 ? "SEE THE VERDICT!" : "DIG DEEPER! ⛏")" />
+    }
+    else
+    {
+        <main class="verdict">
+            <section class="panel layer-4">
+                <div class="caption">THE VERDICT</div>
+                <h2>You found @found.Count of @TotalFlags red flags.</h2>
+                <div class="rank">RANK: @Rank</div>
+
+                <h3>Your trust, layer by layer</h3>
+                <svg class="chart" viewBox="0 0 640 220" role="img" aria-label="Trust by layer">
+                    @for (var y = 0; y <= 100; y += 50)
+                    {
+                        <g>
+                            <line x1="50" x2="620" y1="@Y(y)" y2="@Y(y)" class="grid" />
+                            <text x="42" y="@(Y(y) + 4)" text-anchor="end" class="axis">@y%</text>
+                        </g>
+                    }
+                    @* pathLength="1" lets the CSS draw the line with a dash offset of 1 -> 0, whatever its real length *@
+                    <polyline class="line draw" points="@Points" pathLength="1" />
+                    @for (var i = 0; i < Layers.Count; i++)
+                    {
+                        <g>
+                            <circle cx="@X(i)" cy="@Y(trust[i])" r="6" class="dot" style="animation-delay: @((0.2 + i * 0.36).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))s" />
+                            <text x="@X(i)" y="212" text-anchor="middle" class="axis">@Layers[i].Kicker.Replace("The ", "")</text>
+                        </g>
+                    }
+                </svg>
+
+                <h3>What the headline should have said</h3>
+                <blockquote class="honest">@CaseStudy.HonestHeadline</blockquote>
+
+                <h3>Your pocket checklist for the next headline</h3>
+                <ol class="checklist">
+                    @foreach (var item in CaseStudy.Checklist)
+                    {
+                        <li>@item</li>
+                    }
+                </ol>
+
+                <div class="true-story">
+                    <div class="true-badge">TRUE STORY!</div>
+                    <h3>Think nobody would fall for the coffee study? It already happened.</h3>
+                    <p>@CaseStudy.RealCaseIntro</p>
+                    <p class="sound-familiar">Sound familiar?</p>
+                    <ul class="real-facts">
+                        @foreach (var (fact, flag) in CaseStudy.RealCaseFacts)
+                        {
+                            <li><span class="flag-chip">🚩 @flag</span> @fact</li>
+                        }
+                    </ul>
+                    <p class="source">
+                        Source: <a href="@CaseStudy.RealCaseSourceUrl" target="_blank" rel="noopener">@CaseStudy.RealCaseSourceTitle</a>.
+                        How many readers actually believed it is debated; the &ldquo;millions&rdquo; is Bohannon&rsquo;s claim.
+                    </p>
+                </div>
+
+                <LearnMore />
+
+                <div class="verdict-actions">
+                    <button class="dig" @onclick="Restart">START OVER ↺</button>
+                    <a class="dig" href="scan">NOW TRY A REAL ARTICLE ▶</a>
+                </div>
+            </section>
+        </main>
+
+        <div class="confetti" aria-hidden="true">
+            @foreach (var p in confetti)
+            {
+                <i class="@p.Shape" style="@p.Style"></i>
+            }
+        </div>
+    }
+
+    <footer>
+        The coffee study is invented (people, numbers and all), for teaching only. Not medical advice. ☕
+        @if (IsVerdict)
+        {
+            <span>The chocolate story in the verdict is real. See its source.</span>
+        }
+    </footer>
+</div>
+
+@code {
+    static readonly IReadOnlyList<Layer> Layers = CaseStudy.Layers;
+    static readonly int TotalFlags = Layers.Sum(l => l.Flags.Count());
+
+    int Current;
+    readonly int[] trust = [90, 90, 90, 90, 90];
+    readonly HashSet<Flag> found = [];
+    readonly HashSet<Flag> revealed = [];
+
+    // Confetti: a full shower for 75%+ of flags found, a polite sprinkle otherwise (so a quick demo still gets some).
+    const double ConfettiThreshold = 0.75;
+    static readonly string[] ConfettiColors = ["#e4002b", "#ffe600", "#00b7eb", "#111", "#ffffff"];
+    sealed record Piece(string Shape, string Style);
+    List<Piece> confetti = [];
+
+    bool IsVerdict => Current >= Layers.Count;
+    double Score => (double)found.Count / TotalFlags;
+
+    string Rank => Score switch
+    {
+        >= 0.9 => "MASTER DEBUNKER 🏆",
+        >= ConfettiThreshold => "HEADLINE HAWK 🦅",
+        >= 0.4 => "JUNIOR SLEUTH 🔍",
+        _ => "ROOKIE READER 📰",
+    };
+
+    void Next()
+    {
+        Current++;
+        if (Current < Layers.Count)
+        {
+            trust[Current] = trust[Current - 1];
+            _ = Sfx.Play("whoosh");
+        }
+        else
+        {
+            confetti = MakeConfetti(Score >= ConfettiThreshold ? 140 : 24);
+            _ = Sfx.Play("tada");
+        }
+    }
+
+    void Restart()
+    {
+        Current = 0;
+        found.Clear();
+        revealed.Clear();
+        confetti = [];
+        Array.Fill(trust, 90);
+        _ = Sfx.Play("whoosh");
+    }
+
+    static List<Piece> MakeConfetti(int count)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var r = Random.Shared;
+        return Enumerable.Range(0, count).Select(_ => new Piece(
+            r.Next(3) == 0 ? "dot" : "strip",
+            string.Format(inv, "left:{0:0.0}%;background:{1};--r:{2}deg;animation-duration:{3:0.00}s;animation-delay:{4:0.00}s",
+                r.NextDouble() * 100, ConfettiColors[r.Next(ConfettiColors.Length)], r.Next(360),
+                2.2 + r.NextDouble() * 2.2, r.NextDouble() * 1.2))).ToList();
+    }
+
+    static int X(int i) => 90 + i * 125;
+    static int Y(int t) => 20 + (100 - t) * 17 / 10;
+    string Points => string.Join(" ", Enumerable.Range(0, Layers.Count).Select(i => $"{X(i)},{Y(trust[i])}"));
+}

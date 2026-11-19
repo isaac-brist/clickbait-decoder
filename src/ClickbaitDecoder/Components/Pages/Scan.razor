@@ -1,0 +1,110 @@
+@page "/scan"
+@using ClickbaitDecoder.Services
+@using ClickbaitDecoder.Story
+@inject ArticleFetcher Fetcher
+
+<PageTitle>Clickbait Decoder · Scan</PageTitle>
+
+<div class="app stage-2">
+    <header class="masthead">
+        <div class="logo">CLICKBAIT <span>DECODER</span></div>
+        <div class="caption">THE SCANNER: Bring your own headline!</div>
+        <a class="navlink" href="">◀ Back to the case file</a>
+        <SoundToggle />
+    </header>
+
+    @if (layer is null)
+    {
+        <main class="panel scan-form">
+            <h2>Paste a link to a news article about a study</h2>
+            <form @onsubmit="ScanUrl" @onsubmit:preventDefault>
+                <div class="url-row">
+                    <input class="url" type="url" placeholder="https://..." @bind="url" @bind:event="oninput" disabled="@busy" />
+                    <button class="dig" type="submit" disabled="@busy">@(busy ? "FETCHING..." : "SCAN IT! 🔍")</button>
+                </div>
+            </form>
+
+            <details open="@pasteOpen">
+                <summary>Site blocked us? Paste the article text instead</summary>
+                <textarea rows="8" placeholder="Headline on the first line, then the article..." @bind="pasted"></textarea>
+                <button class="dig small" @onclick="ScanText">SCAN TEXT</button>
+            </details>
+
+            @if (error is not null)
+            {
+                <div class="error-bubble"><b>KA-BOOM!</b> @error</div>
+            }
+
+            <p class="fine">
+                The scanner is a simple keyword detector, not a fact checker. It flags wording worth a second look.
+                It will miss things, and it will sometimes flag perfectly fine sentences. You're still the detective.
+            </p>
+
+            <LearnMore />
+        </main>
+    }
+    else
+    {
+        <LayerView Layer="layer" Style="2" Found="found" Revealed="revealed" ShowTrust="false"
+                   NextLabel="SCAN ANOTHER ↺" OnNext="Reset" Hint="@hint" />
+    }
+
+    <footer>Scans happen on this machine. The scanner keeps nothing. Quick scan, not a verdict.</footer>
+</div>
+
+@code {
+    string url = "";
+    string pasted = "";
+    bool pasteOpen;
+    bool busy;
+    string? error;
+    string hint = "";
+    Layer? layer;
+    readonly HashSet<Flag> found = [];
+    readonly HashSet<Flag> revealed = [];
+
+    async Task ScanUrl()
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        busy = true;
+        error = null;
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            Show(await Fetcher.FetchAsync(url, cts.Token));
+        }
+        catch (ArticleException ex)
+        {
+            error = ex.Message;
+            pasteOpen = true;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    void ScanText()
+    {
+        error = null;
+        try { Show(ArticleFetcher.FromText(pasted)); }
+        catch (ArticleException ex) { error = ex.Message; }
+    }
+
+    void Show(Article article)
+    {
+        found.Clear();
+        revealed.Clear();
+        layer = RedFlagScanner.Scan(article.Headline, article.Paragraphs, $"Scanned: {article.Source}");
+        var count = layer.Flags.Count();
+        hint = count == 0
+            ? "The scanner found nothing suspicious. That doesn't mean it's fine! Still ask: who, how many, compared to what, who paid?"
+            : $"The scanner spotted {count} phrase{(count == 1 ? "" : "s")} worth a second look. Can you find them?";
+    }
+
+    void Reset()
+    {
+        layer = null;
+        error = null;
+    }
+}

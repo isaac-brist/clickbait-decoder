@@ -1,0 +1,207 @@
+@using ClickbaitDecoder.Story
+@using ClickbaitDecoder.Services
+@inject Sfx Sfx
+@inject IJSRuntime JS
+
+@* One "page" of the hunt: the document on the left; tally, explanation bubbles, trust slider and next button on the right.
+   Used by the case study (Home) and by the scanner (/scan). *@
+
+<main class="board">
+    <section class="panel layer-@Style @shakeCss">
+        @if (stampText is not null)
+        {
+            <div class="stamp @(stampPerfect ? "" : "meh")">@stampText</div>
+        }
+        <div class="caption">@Layer.Caption</div>
+        <article class="doc">
+            @foreach (var block in Layer.Blocks)
+            {
+                <div class="blk blk-@block.Kind">
+                    @foreach (var seg in block.Segments)
+                    {
+                        <span class="@SegCss(seg)" @onclick="e => Click(seg, e)">@seg.Text</span>
+                    }
+                </div>
+            }
+        </article>
+    </section>
+
+    <aside class="side">
+        <div class="tally">
+            🚩 <b>@FoundHere</b> / @flags.Count flags found on this page
+            @if (FoundHere < flags.Count && flags.Any(f => !Revealed.Contains(f)))
+            {
+                <button class="link" @onclick="RevealAll">give up &amp; show me</button>
+            }
+        </div>
+
+        <div class="bubbles" @ref="bubblesEl">
+            @for (var i = discovered.Count - 1; i >= 0; i--) // newest find on top
+            {
+                var f = discovered[i];
+                <div class="bubble @(Found.Contains(f) ? "" : "revealed")">
+                    <div class="bubble-title">🚩 @f.Name</div>
+                    <div>@f.Why</div>
+                </div>
+            }
+            @if (discovered.Count == 0)
+            {
+                <div class="bubble hint">@Hint</div>
+            }
+        </div>
+
+        @if (ShowTrust)
+        {
+            <div class="trust">
+                <label>How much do you trust the claim <i>now</i>?</label>
+                <input type="range" min="0" max="100" step="5" value="@Trust"
+                       @oninput="OnTrustInput" />
+                <div class="trust-val">@Trust% <span>@TrustWord(Trust)</span></div>
+            </div>
+        }
+
+        <button class="dig" @onclick="OnNext">@NextLabel</button>
+    </aside>
+</main>
+
+@if (burst is not null)
+{
+    <div @key="burst.Id" class="burst @burst.Css" style="left:@(burst.X)px; top:@(burst.Y)px">
+        @burst.Text
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Layer Layer { get; set; } = default!;
+    [Parameter, EditorRequired] public HashSet<Flag> Found { get; set; } = default!;
+    [Parameter, EditorRequired] public HashSet<Flag> Revealed { get; set; } = default!;
+    [Parameter] public int Style { get; set; }                      // 0 = loudest tabloid ... 4 = calm journal
+    [Parameter] public bool ShowTrust { get; set; } = true;
+    [Parameter] public int Trust { get; set; }
+    [Parameter] public EventCallback<int> TrustChanged { get; set; }
+    [Parameter] public string NextLabel { get; set; } = "DIG DEEPER! ⛏";
+    [Parameter] public EventCallback OnNext { get; set; }
+    [Parameter] public string Hint { get; set; } = "Psst... some of this text is lying to you. Click it!";
+
+    static readonly string[] HitWords = ["POW!", "BAM!", "ZAP!", "BUSTED!", "GOTCHA!", "KA-BLAM!", "WHAM!"];
+    static readonly string[] MissWords = ["meh.", "seems fine", "nope", "move along"];
+
+    static readonly string[] StampWords = ["DEBUNKED!", "BUSTED!", "FACT-CHECKED!"];
+    static readonly TimeSpan ComboWindow = TimeSpan.FromSeconds(2.5);
+
+    sealed record Burst(int Id, double X, double Y, string Text, string Css);
+
+    List<Flag> flags = [];
+    List<Flag> discovered = []; // this page's flags in the order they were found or revealed
+    Layer? lastLayer;
+    Burst? burst;
+    int burstId;
+
+    // Juice: screen shake (two identical animations, alternated so each hit restarts it), combos, and the page-clear stamp.
+    string shakeCss = "";
+    int combo;
+    DateTime lastHit;
+    string? stampText;
+    bool stampPerfect;
+
+    ElementReference bubblesEl;
+    bool scrollBubblesToTop;
+
+    int FoundHere => flags.Count(Found.Contains);
+
+    // After a new find renders, scroll the bubble list back to the top so the newest bubble is visible.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!scrollBubblesToTop) return;
+        scrollBubblesToTop = false;
+        try { await JS.InvokeVoidAsync("decoderUi.toTop", bubblesEl); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+    bool Cleared => flags.Count > 0 && flags.All(f => Found.Contains(f) || Revealed.Contains(f));
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Layer, lastLayer)) return;
+        lastLayer = Layer;
+        flags = Layer.Flags.ToList();
+        discovered = flags.Where(f => Found.Contains(f) || Revealed.Contains(f)).ToList();
+        burst = null; // don't carry a POW! over to the next page
+        shakeCss = "";
+        combo = 0;
+        stampText = null;
+        CheckCleared(playSound: false);
+    }
+
+    void Click(Segment seg, MouseEventArgs e)
+    {
+        var hit = seg.Flag is not null && !Found.Contains(seg.Flag) && !Revealed.Contains(seg.Flag);
+        if (seg.Flag is not null && !hit) return; // already found or revealed: no burst spam
+
+        if (!hit)
+        {
+            burst = new Burst(++burstId, e.ClientX, e.ClientY, MissWords[Random.Shared.Next(MissWords.Length)], "miss");
+            _ = Sfx.Play("miss");
+            return;
+        }
+
+        Found.Add(seg.Flag!);
+        discovered.Add(seg.Flag!);
+        scrollBubblesToTop = true;
+
+        var now = DateTime.UtcNow;
+        combo = now - lastHit <= ComboWindow ? combo + 1 : 1;
+        lastHit = now;
+        shakeCss = shakeCss == "shake-a" ? "shake-b" : "shake-a";
+
+        if (combo >= 2)
+        {
+            burst = new Burst(++burstId, e.ClientX, e.ClientY, $"{combo}x COMBO!", "hit combo");
+            _ = Sfx.Play("combo", 0, combo);
+        }
+        else
+        {
+            burst = new Burst(++burstId, e.ClientX, e.ClientY, HitWords[Random.Shared.Next(HitWords.Length)], "hit");
+            _ = Sfx.Play("pow");
+        }
+
+        CheckCleared(playSound: true);
+    }
+
+    // When the last flag on a page is found (or revealed), slam a rubber stamp onto the article.
+    void CheckCleared(bool playSound)
+    {
+        if (stampText is not null || !Cleared) return;
+        stampPerfect = flags.All(Found.Contains);
+        stampText = stampPerfect ? StampWords[Random.Shared.Next(StampWords.Length)] : "CASE CLOSED";
+        if (playSound) _ = Sfx.Play("stamp", 350); // lands with the end of the stamp animation
+    }
+
+    Task OnTrustInput(ChangeEventArgs e) =>
+        int.TryParse(e.Value?.ToString(), out var t) ? TrustChanged.InvokeAsync(t) : Task.CompletedTask;
+
+    void RevealAll()
+    {
+        // Added bottom-up so that, shown newest-first, the revealed batch still reads top to bottom in page order.
+        foreach (var f in flags.Where(f => !Found.Contains(f) && !Revealed.Contains(f)).Reverse())
+        {
+            Revealed.Add(f);
+            discovered.Add(f);
+        }
+        CheckCleared(playSound: true);
+    }
+
+    string SegCss(Segment s) =>
+        s.Flag is null ? "seg" :
+        Found.Contains(s.Flag) ? "seg flagged" :
+        Revealed.Contains(s.Flag) ? "seg flagged revealed" : "seg";
+
+    static string TrustWord(int t) => t switch
+    {
+        >= 85 => "Sharing it with everyone!",
+        >= 60 => "Sounds legit",
+        >= 40 => "Hmm...",
+        >= 20 => "Pretty sus",
+        _ => "Nope.",
+    };
+}

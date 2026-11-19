@@ -1,0 +1,15 @@
+@using ClickbaitDecoder.Story
+
+<section class="learn">
+    <h3>Want to get good at this? 📚</h3>
+    <ul>
+        @foreach (var link in CaseStudy.LearnMore)
+        {
+            <li>
+                <a href="@link.Url" target="_blank" rel="noopener">@link.Title</a>
+                <span class="learn-who">· @link.Who</span>
+                <div class="learn-blurb">@link.Blurb</div>
+            </li>
+        }
+    </ul>
+</section>
